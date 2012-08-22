@@ -81,6 +81,7 @@ This package contains one command and two components
                     'class' => 'application.extensions.ZProductionify.components.ZAssetManager',
                     'version' => INSTANCE_IDENTIFIER, // the unique version number. Recommand git version number
                     'useProductionAssets' => false, // use true in production
+                    'skipExistingFolder' => false, // use true in production
                 ),
                 'clientScript' => array(
                     'class' => 'application.extensions.ZProductionify.components.ZClientScript',
