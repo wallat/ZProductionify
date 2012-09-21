@@ -159,7 +159,7 @@ class PrepareProductionCommand extends CConsoleCommand {
             case 'js':
             case 'css':
                 if (empty($this->yuiJarPath)) {
-                    $this->yuiJarPath = realpath(dirname(__FILE__).DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'bins'.DIRECTORY_SEPARATOR.'yuicompressor-2.4.1.jar');
+                    $this->yuiJarPath = realpath(dirname(__FILE__).DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'bins'.DIRECTORY_SEPARATOR.'yuicompressor-2.4.7.jar');
                 }
                 $jarPath = $this->yuiJarPath;
                 return exec("/usr/bin/env java -jar $jarPath $inPath -o $outPath --charset utf-8 --type $type --line-break 5000");

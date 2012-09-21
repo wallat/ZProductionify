@@ -21,17 +21,6 @@ class ZAssetManager extends CAssetManager {
     public $useProductionAssets = false;
 
     /**
-     * Wether to skip copying the existing folder.
-     * If this option is true, it will check all the modification time of each file
-     * recursively. It did takes some time to do it.
-     *
-     * Recommand use true in the production;
-     *
-     * @var boolean
-     */
-    public $skipExistingFolder = false;
-
-    /**
      * Use this value to create different hash between different version systems.
      *
      * @var string
@@ -48,7 +37,11 @@ class ZAssetManager extends CAssetManager {
             $path = str_replace(DIRECTORY_SEPARATOR.'assets', DIRECTORY_SEPARATOR.'assets'.DIRECTORY_SEPARATOR.'production', $path);
         }
 
-        return $this->better_publish($path, $hashByName, $level, $forceCopy);
+        if (YII_DEBUG) {
+            return $this->devPublish($path, $hashByName, $level, $forceCopy);
+        } else {
+            return parent::publish($path, $hashByName, $level, $forceCopy);
+        }
     }
 
     /**
@@ -67,91 +60,100 @@ class ZAssetManager extends CAssetManager {
      *
      * @see http://www.yiiframework.com/doc/api/1.1/CAssetManager#publish-detail
      */
-    public function better_publish($path,$hashByName=false,$level=-1,$forceCopy=false) {
-        if(isset($this->_published[$path]))
+    public function devPublish($path,$hashByName=false,$level=-1,$forceCopy=false) {
+        if (isset($this->_published[$path]))
             return $this->_published[$path];
-        else if(($src=realpath($path))!==false) {
-            if(is_file($src)) {
-                $dir=$this->hash($hashByName ? basename($src) : dirname($src));
-                $fileName=basename($src);
-                $dstDir=$this->getBasePath().DIRECTORY_SEPARATOR.$dir;
-                $dstFile=$dstDir.DIRECTORY_SEPARATOR.$fileName;
+        else if (($src=realpath($path))!==false) {
+            if (is_file($src)) {
+                $dir = $this->hash($hashByName ? basename($src) : dirname($src));
+                $fileName = basename($src);
+                $dstDir = $this->getBasePath().DIRECTORY_SEPARATOR.$dir;
+                $dstFile = $dstDir.DIRECTORY_SEPARATOR.$fileName;
 
-                if($this->linkAssets) {
-                    if(!is_file($dstFile)) {
-                        if(!is_dir($dstDir)) {
+                if ($this->linkAssets) {
+                    if (!is_file($dstFile)) {
+                        if (!is_dir($dstDir)) {
                             mkdir($dstDir);
                             @chmod($dstDir, $this->newDirMode);
                         }
                         symlink($src,$dstFile);
                     }
-                } else if(@filemtime($dstFile)<@filemtime($src) || $forceCopy) {
-                    if(!is_dir($dstDir)) {
-                        mkdir($dstDir);
-                        @chmod($dstDir, $this->newDirMode);
-                    }
-                    copy($src,$dstFile);
-                    @chmod($dstFile, $this->newFileMode);
+                } else {
+                    $this->copyFileIfNewer($src, $dstFile, $forceCopy);
                 }
 
                 return $this->_published[$path]=$this->getBaseUrl()."/$dir/$fileName";
-            } else if(is_dir($src)) {
-                $dir=$this->hash($hashByName ? basename($src) : $src);
-                $dstDir=$this->getBasePath().DIRECTORY_SEPARATOR.$dir;
+            } else if (is_dir($src)) {
+                $dir = $this->hash($hashByName ? basename($src) : $src);
+                $dstDir = $this->getBasePath().DIRECTORY_SEPARATOR.$dir;
 
-                if($this->linkAssets) {
-                    if(!is_dir($dstDir))
+                if ($this->linkAssets) {
+                    if (!is_dir($dstDir))
                         symlink($src,$dstDir);
-                } else if ( !$this->skipExistingFolder && is_dir($dstDir)) {
-                    $srcMTime = self::filemtime_r($src);
-                    $dstMTime = self::filemtime_r($dstDir);
-
-                    if ($srcMTime>=$dstMTime) {
-                        CFileHelper::copyDirectory($src,$dstDir,array(
-                            'exclude'=>$this->excludeFiles,
-                            'level'=>$level,
-                            'newDirMode'=>$this->newDirMode,
-                            'newFileMode'=>$this->newFileMode,
-                        ));
-                    }
-                } else if( !is_dir($dstDir) || $forceCopy) {
-                    CFileHelper::copyDirectory($src,$dstDir,array(
-                        'exclude'=>$this->excludeFiles,
-                        'level'=>$level,
-                        'newDirMode'=>$this->newDirMode,
-                        'newFileMode'=>$this->newFileMode,
-                    ));
+                } else {
+                    $this->publishFolder($src, $dstDir, $forceCopy);
                 }
 
                 return $this->_published[$path]=$this->getBaseUrl().'/'.$dir;
             }
         }
+
         throw new CException(Yii::t('yii','The asset "{asset}" to be published does not exist.',
             array('{asset}'=>$path)));
     }
 
     /**
-     * Retrieve the folder lastest modification time recursively
+     * Both path should be the existing folder
      *
-     * @see {http://php.net/manual/fr/function.filemtime.php}
-     *
-     * @param  string $path The target path. Could be file or folder.
-     * @return ineteger timestamp
+     * @param  [type] $srcDir [description]
+     * @param  [type] $dstDir [description]
+     * @return [type]         [description]
      */
-    public static function filemtime_r($path) {
-        if (!file_exists($path))
-            return 0;
+    public function publishFolder($srcDir, $dstDir, $forceCopy=false) {
+        $srcDir = rtrim($srcDir, DIRECTORY_SEPARATOR);
+        $dstDir = rtrim($dstDir, DIRECTORY_SEPARATOR);
 
-        if (is_file($path))
-            return filemtime($path);
-
-        $ret = 0;
-        foreach (glob($path."/*") as $fn) {
-            $dstt = self::filemtime_r($fn);
-            if ($dstt > $ret)
-               $ret = $dstt;
+        if ( !is_dir($srcDir)) {
+            throw new Exception("srcDir $srcDir is not a valid folder path");
         }
 
-        return $ret;
+        if (is_dir($dstDir)) {
+            $it = new DirectoryIterator($srcDir);
+
+            foreach($it as $f) {
+                if ($it->isDot()) {
+                    // do nothing
+                } else if ($f->isDir()) {
+                    $bn = $f->getBasename();
+                    $this->publishFolder($srcDir.DIRECTORY_SEPARATOR.$bn, $dstDir.DIRECTORY_SEPARATOR.$bn, $forceCopy);
+                } else {
+                    $fn = $f->getFilename();
+                    $src = $srcDir.DIRECTORY_SEPARATOR.$fn;
+                    $dst = $dstDir.DIRECTORY_SEPARATOR.$fn;
+                    $this->copyFileIfNewer($src, $dst, $forceCopy);
+                }
+            }
+        } else {
+            CFileHelper::copyDirectory($srcDir, $dstDir, array(
+                'exclude' => $this->excludeFiles,
+                'level' => -1,
+                'newDirMode' => $this->newDirMode,
+                'newFileMode' => $this->newFileMode,
+            ));
+        }
+    }
+
+    /**
+     * Copy the file into the destination place if its newer
+     *
+     * @param  string  $src
+     * @param  string  $dst
+     * @param  boolean $forceCopy
+     */
+    public function copyFileIfNewer($src, $dst, $forceCopy=false) {
+        if (@filemtime($dst)<@filemtime($src) || $forceCopy) {
+            copy($src, $dst);
+            @chmod($dst, $this->newFileMode);
+        }
     }
 }
